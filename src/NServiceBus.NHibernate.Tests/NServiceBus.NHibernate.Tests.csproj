@@ -110,6 +110,7 @@
     <EmbeddedResource Include="SagaPersister\TestSagaWithHbmlXmlOverride.hbm.xml" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="App.config" />
     <None Include="packages.config" />
     <None Include="Testing.config">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
