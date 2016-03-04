@@ -6,6 +6,7 @@ namespace NServiceBus.Features
     using System.Linq;
     using System.Threading;
     using NHibernate.Mapping.ByCode;
+    using NServiceBus.Logging;
     using NServiceBus.Outbox;
     using NServiceBus.Outbox.NHibernate;
     using Configuration = NHibernate.Cfg.Configuration;
@@ -114,6 +115,11 @@ namespace NServiceBus.Features
                     var timestamp = DateTime.UtcNow;
                     var count = outboxPersister.RemoveEntriesOlderThan(DateTime.UtcNow - timeToKeepDeduplicationData);
 
+                    if (WarningThressholdCount < count)
+                    {
+                        Log.WarnFormat("Outbox cleanup task deleted {0:N0} rows which passed {1:N0}.", count, WarningThressholdCount);
+                    }
+
                     history.RemoveAt(0);
                     history.Add(Tuple.Create(count, timestamp));
 
@@ -139,6 +145,7 @@ namespace NServiceBus.Features
                 }
             }
 
+            const int WarningThressholdCount = 10000;
             // ReSharper disable NotAccessedField.Local
             Timer cleanupTimer;
             // ReSharper restore NotAccessedField.Local
@@ -152,6 +159,7 @@ namespace NServiceBus.Features
             const int batchSize = 1000;
             const int historyLength = 25;
             readonly List<Tuple<int, DateTime>> history = new List<Tuple<int, DateTime>>(historyLength);
+            private static readonly ILog Log = LogManager.GetLogger(typeof(NHibernateOutboxStorage));
         }
     }
 }
