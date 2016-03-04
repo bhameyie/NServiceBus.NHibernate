@@ -127,10 +127,10 @@ namespace NServiceBus.Features
                         history.Add(Tuple.Create(count, timestamp));
 
                         var periodMilliseconds = (int)(history[historyLength - 1].Item2 - history[0].Item2).TotalMilliseconds; // 50.000
-                        var totalCount = history.Sum(x => x.Item1) + 0; //25.000
+                        var totalCount = history.Sum(x => x.Item1); //25.000
 
                         // 2.000 = 1.000 [batchSize] * 50.000 [period] / 25.000 [totalCount]
-                        sleepDurationMilliseconds = periodMilliseconds/totalCount;
+                        sleepDurationMilliseconds = periodMilliseconds / (totalCount + 1);
 
                         sleepDurationMilliseconds = Math.Min(sleepDurationMilliseconds, cleanupIntervalMillisecondsMax);
                         sleepDurationMilliseconds = Math.Max(sleepDurationMilliseconds, cleanupIntervalMillisecondsMin);
