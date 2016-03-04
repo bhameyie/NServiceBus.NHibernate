@@ -1,7 +1,9 @@
 namespace NServiceBus.Features
 {
     using System;
+    using System.Collections.Generic;
     using System.Configuration;
+    using System.Linq;
     using System.Threading;
     using NHibernate.Mapping.ByCode;
     using NServiceBus.Outbox;
@@ -42,14 +44,14 @@ namespace NServiceBus.Features
             config.AddMapping(mapper.CompileMappingForAllExplicitlyAddedEntities());
         }
 
-        class OutboxCleaner:FeatureStartupTask
+        class OutboxCleaner : FeatureStartupTask
         {
             public OutboxCleaner(OutboxPersister outboxPersister, CriticalError criticalError)
             {
                 this.outboxPersister = outboxPersister;
                 this.criticalError = criticalError;
             }
- 
+
             protected override void OnStart()
             {
                 var configValue = ConfigurationManager.AppSettings.Get("NServiceBus/Outbox/NHibernate/TimeToKeepDeduplicationData");
@@ -80,7 +82,15 @@ namespace NServiceBus.Features
                     }
                 }
 
-                cleanupTimer = new Timer(PerformCleanup, null, TimeSpan.FromMinutes(1), frequencyToRunDeduplicationDataCleanup);
+                // Seed history
+                var timestamp = DateTime.UtcNow;
+                for (var i = 0; i < historyLength; i++)
+                {
+                    history.Add(Tuple.Create(batchSize, timestamp = timestamp - frequencyToRunDeduplicationDataCleanup));
+                }
+
+                cleanupIntervalMillisecondsMax = (int)frequencyToRunDeduplicationDataCleanup.TotalMilliseconds;
+                cleanupTimer = new Timer(PerformCleanup, null, 0, Timeout.Infinite); // Trigger immediately at startup and just once
             }
 
             protected override void OnStop()
@@ -95,10 +105,28 @@ namespace NServiceBus.Features
 
             void PerformCleanup(object state)
             {
+                // Locking is not required to prevent
+                // overlapping cleanups as the timer
+                // will once fire once.
+
                 try
                 {
-                    outboxPersister.RemoveEntriesOlderThan(DateTime.UtcNow - timeToKeepDeduplicationData);
-                    cleanupFailures = 0;
+                    var timestamp = DateTime.UtcNow;
+                    var count = outboxPersister.RemoveEntriesOlderThan(DateTime.UtcNow - timeToKeepDeduplicationData);
+
+                    history.RemoveAt(0);
+                    history.Add(Tuple.Create(count, timestamp));
+
+                    var periodMilliseconds = (int)(history[historyLength - 1].Item2 - history[0].Item2).TotalMilliseconds; // 50.000
+                    var totalCount = history.Sum(x => x.Item1) + 0; //25.000
+
+                    // 2.000 = 1.000 [batchSize] * 50.000 [period] / 25.000 [totalCount]
+                    var sleepDurationMilliseconds = periodMilliseconds / totalCount;
+
+                    sleepDurationMilliseconds = Math.Min(sleepDurationMilliseconds, cleanupIntervalMillisecondsMax);
+                    sleepDurationMilliseconds = Math.Max(sleepDurationMilliseconds, cleanupIntervalMillisecondsMin);
+
+                    cleanupTimer.Change(sleepDurationMilliseconds, Timeout.Infinite); // Only trigger timeone once
                 }
                 catch (Exception ex)
                 {
@@ -110,15 +138,20 @@ namespace NServiceBus.Features
                     }
                 }
             }
- 
-// ReSharper disable NotAccessedField.Local
+
+            // ReSharper disable NotAccessedField.Local
             Timer cleanupTimer;
-// ReSharper restore NotAccessedField.Local
+            // ReSharper restore NotAccessedField.Local
             OutboxPersister outboxPersister;
             CriticalError criticalError;
             int cleanupFailures;
             TimeSpan timeToKeepDeduplicationData;
             TimeSpan frequencyToRunDeduplicationDataCleanup;
+            int cleanupIntervalMillisecondsMax;
+            const int cleanupIntervalMillisecondsMin = 100;
+            const int batchSize = 1000;
+            const int historyLength = 25;
+            readonly List<Tuple<int, DateTime>> history = new List<Tuple<int, DateTime>>(historyLength);
         }
     }
 }

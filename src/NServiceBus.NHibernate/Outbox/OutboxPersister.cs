@@ -97,7 +97,7 @@
             }
         }
 
-        public void RemoveEntriesOlderThan(DateTime dateTime)
+        public int RemoveEntriesOlderThan(DateTime dateTime)
         {
             using (new TransactionScope(TransactionScopeOption.Suppress))
             {
@@ -107,11 +107,12 @@
                     {
                         var queryString = string.Format("delete from {0} where Dispatched = true And DispatchedAt < :date", typeof(OutboxRecord));
 
-                        session.CreateQuery(queryString)
+                        var count = session.CreateQuery(queryString)
                             .SetDateTime("date", dateTime)
                             .ExecuteUpdate();
 
                         tx.Commit();
+                        return count;
                     }
                 }
             }
