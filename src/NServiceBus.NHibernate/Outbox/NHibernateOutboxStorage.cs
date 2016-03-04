@@ -91,6 +91,7 @@ namespace NServiceBus.Features
                 }
 
                 cleanupIntervalMillisecondsMax = (int)frequencyToRunDeduplicationDataCleanup.TotalMilliseconds;
+                sleepDurationMilliseconds = cleanupIntervalMillisecondsMax;
                 cleanupTimer = new Timer(PerformCleanup, null, 0, Timeout.Infinite); // Trigger immediately at startup and just once
             }
 
@@ -123,16 +124,21 @@ namespace NServiceBus.Features
                     history.RemoveAt(0);
                     history.Add(Tuple.Create(count, timestamp));
 
-                    var periodMilliseconds = (int)(history[historyLength - 1].Item2 - history[0].Item2).TotalMilliseconds; // 50.000
+                    var periodMilliseconds = (int) (history[historyLength - 1].Item2 - history[0].Item2).TotalMilliseconds; // 50.000
                     var totalCount = history.Sum(x => x.Item1) + 0; //25.000
 
                     // 2.000 = 1.000 [batchSize] * 50.000 [period] / 25.000 [totalCount]
-                    var sleepDurationMilliseconds = periodMilliseconds / totalCount;
+                    sleepDurationMilliseconds = periodMilliseconds/totalCount;
 
                     sleepDurationMilliseconds = Math.Min(sleepDurationMilliseconds, cleanupIntervalMillisecondsMax);
                     sleepDurationMilliseconds = Math.Max(sleepDurationMilliseconds, cleanupIntervalMillisecondsMin);
 
-                    cleanupTimer.Change(sleepDurationMilliseconds, Timeout.Infinite); // Only trigger timeone once
+                    var duration = DateTime.UtcNow - timestamp;
+                    if (duration > DeletionDurationWarning)
+                    {
+                        Log.WarnFormat("Outbox cleanup task duration might indicate locking issues: {0:M0}ms", duration.TotalMilliseconds);
+                    }
+
                 }
                 catch (Exception ex)
                 {
@@ -143,8 +149,13 @@ namespace NServiceBus.Features
                         cleanupFailures = 0;
                     }
                 }
+                finally
+                {
+                    cleanupTimer.Change(sleepDurationMilliseconds, Timeout.Infinite); // Only trigger timer once
+                }
             }
 
+            readonly TimeSpan DeletionDurationWarning = TimeSpan.FromSeconds(10);
             const int WarningThressholdCount = 10000;
             // ReSharper disable NotAccessedField.Local
             Timer cleanupTimer;
@@ -160,6 +171,7 @@ namespace NServiceBus.Features
             const int historyLength = 25;
             readonly List<Tuple<int, DateTime>> history = new List<Tuple<int, DateTime>>(historyLength);
             private static readonly ILog Log = LogManager.GetLogger(typeof(NHibernateOutboxStorage));
+            int sleepDurationMilliseconds;
         }
     }
 }
