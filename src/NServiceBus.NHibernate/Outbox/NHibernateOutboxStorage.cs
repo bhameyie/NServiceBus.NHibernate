@@ -113,32 +113,37 @@ namespace NServiceBus.Features
 
                 try
                 {
-                    var timestamp = DateTime.UtcNow;
-                    var count = outboxPersister.RemoveEntriesOlderThan(DateTime.UtcNow - timeToKeepDeduplicationData);
-
-                    if (WarningThressholdCount < count)
+                    do
                     {
-                        Log.WarnFormat("Outbox cleanup task deleted {0:N0} rows which passed {1:N0}.", count, WarningThressholdCount);
-                    }
+                        var timestamp = DateTime.UtcNow;
+                        var count = outboxPersister.RemoveEntriesOlderThan(DateTime.UtcNow - timeToKeepDeduplicationData);
 
-                    history.RemoveAt(0);
-                    history.Add(Tuple.Create(count, timestamp));
+                        if (WarningThressholdCount < count)
+                        {
+                            Log.WarnFormat("Outbox cleanup task deleted {0:N0} rows which passed {1:N0}.", count, WarningThressholdCount);
+                        }
 
-                    var periodMilliseconds = (int) (history[historyLength - 1].Item2 - history[0].Item2).TotalMilliseconds; // 50.000
-                    var totalCount = history.Sum(x => x.Item1) + 0; //25.000
+                        history.RemoveAt(0);
+                        history.Add(Tuple.Create(count, timestamp));
 
-                    // 2.000 = 1.000 [batchSize] * 50.000 [period] / 25.000 [totalCount]
-                    sleepDurationMilliseconds = periodMilliseconds/totalCount;
+                        var periodMilliseconds = (int)(history[historyLength - 1].Item2 - history[0].Item2).TotalMilliseconds; // 50.000
+                        var totalCount = history.Sum(x => x.Item1) + 0; //25.000
 
-                    sleepDurationMilliseconds = Math.Min(sleepDurationMilliseconds, cleanupIntervalMillisecondsMax);
-                    sleepDurationMilliseconds = Math.Max(sleepDurationMilliseconds, cleanupIntervalMillisecondsMin);
+                        // 2.000 = 1.000 [batchSize] * 50.000 [period] / 25.000 [totalCount]
+                        sleepDurationMilliseconds = periodMilliseconds/totalCount;
 
-                    var duration = DateTime.UtcNow - timestamp;
-                    if (duration > DeletionDurationWarning)
-                    {
-                        Log.WarnFormat("Outbox cleanup task duration might indicate locking issues: {0:M0}ms", duration.TotalMilliseconds);
-                    }
+                        sleepDurationMilliseconds = Math.Min(sleepDurationMilliseconds, cleanupIntervalMillisecondsMax);
+                        sleepDurationMilliseconds = Math.Max(sleepDurationMilliseconds, cleanupIntervalMillisecondsMin);
 
+                        var duration = DateTime.UtcNow - timestamp;
+                        if (duration > DeletionDurationWarning)
+                        {
+                            Log.WarnFormat("Outbox cleanup task duration might indicate locking issues: {0:M0}ms", duration.TotalMilliseconds);
+                        }
+
+                        // Compensate sleep with the time for the task to execute
+                        sleepDurationMilliseconds = sleepDurationMilliseconds - (int)duration.TotalMilliseconds;
+                    } while (sleepDurationMilliseconds < 0);
                 }
                 catch (Exception ex)
                 {
