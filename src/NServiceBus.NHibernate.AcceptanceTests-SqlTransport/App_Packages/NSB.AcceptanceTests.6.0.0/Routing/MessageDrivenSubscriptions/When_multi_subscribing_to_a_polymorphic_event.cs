@@ -14,15 +14,37 @@
         public async Task Both_events_should_be_delivered()
         {
             await Scenario.Define<Context>()
-                .WithEndpoint<Publisher1>(b => b.When(c => c.Publisher1HasASubscriberForIMyEvent, (session, c) =>
+                .WithEndpoint<Publisher1>(b => b.When(c => c.Publisher1HasASubscriberForIMyEvent, async (session, c) =>
                 {
-                    c.AddTrace("Publishing MyEvent1");
-                    return session.Publish(new MyEvent1());
+                    try
+                    {
+                        c.AddTrace("Publishing MyEvent1");
+                        var task = session.Publish(new MyEvent1());
+                        c.AddTrace("Publishing MyEvent1 started");
+                        await task;
+                        c.AddTrace("Publishing MyEvent1 has been completed");
+                    }
+                    catch (System.Exception e)
+                    {
+                        c.AddTrace($"Error occured when publishing MyEvent1: {e.ToString()}");
+                        throw;
+                    }
                 }))
-                .WithEndpoint<Publisher2>(b => b.When(c => c.Publisher2HasDetectedASubscriberForEvent2, (session, c) =>
+                .WithEndpoint<Publisher2>(b => b.When(c => c.Publisher2HasDetectedASubscriberForEvent2, async (session, c) =>
                 {
-                    c.AddTrace("Publishing MyEvent2");
-                    return session.Publish(new MyEvent2());
+                    try
+                    {
+                        c.AddTrace("Publishing MyEvent2");
+                        var task = session.Publish(new MyEvent2());
+                        c.AddTrace("Publishing MyEvent2 started");
+                        await task;
+                        c.AddTrace("Publishing MyEvent2 has been completed");
+                    }
+                    catch (System.Exception e)
+                    {
+                        c.AddTrace($"Error occured when publishing MyEvent2: {e.ToString()}");
+                        throw;
+                    }
                 }))
                 .WithEndpoint<Subscriber1>(b => b.When(async (session, c) =>
                 {
